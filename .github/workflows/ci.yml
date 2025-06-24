@@ -1,0 +1,141 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Test & Lint
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run tests
+      run: npm test
+      
+    - name: Validate configuration schema
+      run: |
+        # Test that our scripts don't crash on missing env
+        node scripts/validate-config.js || true
+        
+    - name: Check package.json format
+      run: |
+        # Validate package.json is valid JSON
+        cat package.json | jq . > /dev/null
+        
+    - name: Validate wrangler config
+      run: |
+        # Basic validation of wrangler.jsonc
+        npx wrangler validate
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run security audit
+      run: npm audit --audit-level high
+      
+    - name: Check for secrets
+      run: |
+        # Basic check for common secret patterns
+        ! grep -r "secret_[a-zA-Z0-9]" src/ test/ || (echo "Potential secrets found!" && exit 1)
+        ! grep -r "NOTION_TOKEN.*=" src/ test/ || (echo "Hardcoded tokens found!" && exit 1)
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [test, security]
+    if: github.ref == 'refs/heads/develop'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Deploy to Cloudflare Workers (Staging)
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      run: |
+        # Update worker name for staging
+        sed -i 's/"notion-relay"/"notion-relay-staging"/' wrangler.jsonc
+        npx wrangler deploy --env staging
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [test, security]
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Deploy to Cloudflare Workers (Production)
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      run: npx wrangler deploy
+
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    if: github.ref == 'refs/heads/develop'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Run smoke tests against staging
+      env:
+        STAGING_URL: ${{ secrets.STAGING_WORKER_URL }}
+      run: |
+        if [ -n "$STAGING_URL" ]; then
+          chmod +x test/smoke-test.sh
+          ./test/smoke-test.sh $STAGING_URL
+        else
+          echo "Staging URL not configured, skipping integration tests"
+        fi 

@@ -1,16 +1,36 @@
 {
-	"name": "notion-relay",
-	"version": "0.0.0",
-	"private": true,
+	"name": "notion-relay-worker",
+	"version": "1.0.0",
+	"description": "A Cloudflare Worker that sends any JSON payload to your Notion database",
+	"keywords": ["notion", "cloudflare", "worker", "webhook", "json", "relay", "api"],
+	"homepage": "https://github.com/yourusername/notion-relay-worker",
+	"bugs": {
+		"url": "https://github.com/yourusername/notion-relay-worker/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/yourusername/notion-relay-worker.git"
+	},
+	"license": "MIT",
+	"author": "Your Name <your.email@example.com>",
+	"main": "src/index.js",
 	"scripts": {
 		"deploy": "wrangler deploy",
 		"dev": "wrangler dev",
 		"start": "wrangler dev",
-		"test": "vitest"
+		"test": "vitest",
+		"test:smoke": "./test/smoke-test.sh",
+		"test:coverage": "vitest --coverage",
+		"validate": "node scripts/validate-config.js",
+		"setup": "node scripts/setup.js"
 	},
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.8.19",
+		"dotenv": "^16.0.0",
 		"vitest": "~3.2.0",
 		"wrangler": "^4.21.0"
+	},
+	"engines": {
+		"node": ">=18.0.0"
 	}
 }
